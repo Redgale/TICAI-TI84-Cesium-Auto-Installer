@@ -194,6 +194,15 @@ void tuh_umount_cb(uint8_t dev_addr) {
 int main(void) {
     stdio_init_all();
 
+    static FATFS fs;
+    FRESULT mnt = f_mount(&fs, "", 1);
+    if (mnt != FR_OK) {
+        printf("f_mount failed (%d) -- has loader_mode been used to set up the volume yet?\n", mnt);
+        // Don't hang here -- app_state stays APP_IDLE_NO_CALC until a calc
+        // mounts, and any transfer attempt will simply fail (APP_ERROR)
+        // since f_opendir/f_open will fail against an unmounted volume.
+    }
+
     gpio_init(PIN_LED);
     gpio_set_dir(PIN_LED, GPIO_OUT);
     gpio_put(PIN_LED, 0);

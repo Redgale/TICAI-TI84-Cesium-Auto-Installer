@@ -7,21 +7,26 @@ set(CMAKE_CXX_STANDARD 17)
 
 pico_sdk_init()
 
+# FatFs ships inside the Pico SDK's tinyusb submodule -- same source
+# pico-usb-flash-drive uses, so both firmwares agree on the FAT12 format
+# byte-for-byte. No separate FatFs download/clone needed.
+set(FATFS_DIR ${PICO_SDK_PATH}/lib/tinyusb/lib/fatfs/source)
+
 add_executable(field_mode
     src/main.c
     src/dusb_link.c
     src/ti8x_file.c
     src/usbh_ti_vendor.c
-    # add fatfs source files from your loader_mode fork here so both
-    # firmwares agree on the flash layout, e.g.:
-    # lib/fatfs/ff.c
-    # lib/fatfs/ffunicode.c
-    # src/flash_fatfs_driver.c   <- ported from oyama/pico-usb-flash-drive
+    src/flash_ro.c
+    src/fatfs_driver_ro.c
+    ${FATFS_DIR}/ff.c
+    ${FATFS_DIR}/ffsystem.c
+    ${FATFS_DIR}/ffunicode.c
 )
 
 target_include_directories(field_mode PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}
-    # ${CMAKE_CURRENT_LIST_DIR}/lib/fatfs
+    ${CMAKE_CURRENT_LIST_DIR}/src
+    ${FATFS_DIR}
 )
 
 # TinyUSB in HOST role for this build (device role belongs to loader_mode)
@@ -32,6 +37,7 @@ target_compile_definitions(field_mode PRIVATE
 
 target_link_libraries(field_mode
     pico_stdlib
+    hardware_flash
     tinyusb_host
     tinyusb_board
 )
