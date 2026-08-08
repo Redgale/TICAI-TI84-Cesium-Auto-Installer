@@ -2,6 +2,10 @@
 
 A Raspberry Pi Pico–based auto-loader for the **TI-84 Plus CE**.
 
+## Wiring / pinout
+
+![Pico pinout for field_mode](docs/pinout.svg)
+
 `cesium-loader` runs as a battery-powered USB host that pushes files onto the calculator over TI's **DUSB link protocol** at the press of a button. It is designed to make reinstalling **Cesium/arTIfiCE** and reloading games fast after a RAM-clearing test.
 
 ## How It Works
