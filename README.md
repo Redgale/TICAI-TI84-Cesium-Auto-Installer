@@ -1,4 +1,4 @@
-# cesium-loader
+# TACAI
 
 A Raspberry Pi Pico–based auto-loader for the **TI-84 Plus CE**.
 
@@ -78,7 +78,7 @@ cesium-loader/
     ├── flash_ro.h
     │   └── Read-only access to the flash region written by loader_mode
     ├── fatfs_driver_ro.c
-    │   └── FatFs disk I/O layer over flash_ro
+    │   └── FatFs disk I/O glue over flash_ro
     └── tusb_config.h
 ```
 
@@ -285,31 +285,19 @@ This allows `field_mode` to read the same filesystem that `loader_mode` previous
 
 ## License
 
-This repository is licensed under the **GNU General Public License v2.0 or later (GPL-2.0-or-later)**.
+This repository is licensed under the **GNU General Public License v3.0 or later (GPL-3.0-or-later)**.
 
-This licensing choice is primarily due to the project's use of code derived from the **tilibs** project.
+That's not the default choice for a personal hobby project, and it's worth explaining why: `src/dusb_link.c` and `src/ti8x_file.c` are direct ports of protocol/format logic from the **tilibs** project (`libticalcs`, `libtifiles`), which is licensed under the GPL.
 
-`src/dusb_link.c` and `src/ti8x_file.c` are direct ports of protocol and file-format logic from:
+A ported or translated reimplementation of GPL-licensed logic is generally treated as a derivative work, and the GPL requires derivative works to be distributed under the same license. The tilibs source files used as the basis for these ports explicitly include the **"or (at your option) any later version"** clause, which permits this project to use **GPL-3.0-or-later** rather than remaining pinned to GPL v2.
 
-* `libticalcs`
-* `libtifiles`
-* `libticables`
+Licensing the entire repository under the GPL is therefore the straightforward way to remain consistent with the licensing requirements of the code this project is derived from.
 
-These components are licensed under the GPL.
+> **Note:** I'm not a lawyer, and this is not legal advice. If you plan to redistribute this project further, especially in a commercial context, it's worth having the licensing situation professionally assessed rather than relying solely on this explanation.
 
-A ported or translated reimplementation of GPL-licensed code is generally treated as a derivative work, and the GPL requires derivative works to be distributed under the same license. Licensing the complete repository under **GPL-2.0-or-later** is therefore the straightforward approach for maintaining compatibility with those requirements.
+This is compatible with the other code reused in this project: **BSD-3-Clause** (`pico-usb-flash-drive`, Raspberry Pi Pico SDK) and **MIT** (TinyUSB) are permissive licenses that can be incorporated into a GPL-licensed work.
 
-> **Note:** This is not legal advice. If you intend to redistribute this project, particularly in a commercial context, consider obtaining professional legal advice regarding the licensing obligations.
-
-The other major components used by this project have permissive licenses that are compatible with incorporation into a GPL-licensed project:
-
-* BSD-3-Clause — Raspberry Pi Pico SDK
-* BSD-3-Clause — pico-usb-flash-drive
-* MIT — TinyUSB
-
-Full license texts and per-file attribution are available in:
-
-[`THIRD_PARTY_LICENSES.md`](./THIRD_PARTY_LICENSES.md)
+Full license texts and per-file attribution are available in [`THIRD_PARTY_LICENSES.md`](./THIRD_PARTY_LICENSES.md).
 
 ---
 
@@ -376,9 +364,7 @@ This project does not redistribute Cesium or arTIfiCE.
 
 Users are responsible for obtaining those files from their respective projects and complying with their applicable licenses and terms.
 
-Third-party license texts and attribution information for code incorporated into this repository are provided in:
-
-[`THIRD_PARTY_LICENSES.md`](./THIRD_PARTY_LICENSES.md)
+Third-party license texts and attribution information for code incorporated into this repository are provided in [`THIRD_PARTY_LICENSES.md`](./THIRD_PARTY_LICENSES.md).
 
 ---
 
