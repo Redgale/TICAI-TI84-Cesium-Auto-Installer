@@ -364,7 +364,7 @@ This project does not redistribute Cesium or arTIfiCE.
 
 Users are responsible for obtaining those files from their respective projects and complying with their applicable licenses and terms.
 
-Third-party license texts and attribution information for code incorporated into this repository are provided in [`THIRD_PARTY_LICENSES.md`](./THIRD_PARTY_LICENSES.md).
+Third-party license texts and attribution information for code incorporated into this repository are provided in [`THIRD_PARTY_LICENSES.md`](./THIRD_PARTY_LICENSES.md) (Coming soon).
 
 ---
 
