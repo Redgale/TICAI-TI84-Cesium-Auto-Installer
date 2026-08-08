@@ -1,4 +1,4 @@
-# TACAI
+# TICAI
 
 A Raspberry Pi Pico–based auto-loader for the **TI-84 Plus CE**.
 
