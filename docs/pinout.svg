@@ -1,0 +1,121 @@
+<svg viewBox="0 0 760 680" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <rect width="760" height="680" fill="#ffffff"/>
+
+  <text x="380" y="28" text-anchor="middle" font-size="20" font-weight="bold" fill="#111111">
+    field_mode wiring — Raspberry Pi Pico pinout
+  </text>
+
+  <!-- Board outline -->
+  <rect x="260" y="50" width="200" height="570" rx="10" fill="#0d5c2e" stroke="#083d1f" stroke-width="2"/>
+  <text x="360" y="345" text-anchor="middle" font-size="14" fill="#ffffff" opacity="0.55" transform="rotate(90 360 345)">Raspberry Pi Pico</text>
+
+  <!-- USB-C connector notch (top) -->
+  <rect x="330" y="38" width="60" height="18" rx="4" fill="#c0c0c0" stroke="#888888" stroke-width="1.5"/>
+  <text x="360" y="30" text-anchor="middle" font-size="11" fill="#333333">USB-C (BOOTSEL flashing only)</text>
+
+  <!-- BOOTSEL button -->
+  <rect x="300" y="66" width="26" height="18" rx="3" fill="#eeeeee" stroke="#999999"/>
+  <text x="313" y="96" text-anchor="middle" font-size="9" fill="#eeeeee">BOOTSEL</text>
+
+  <!-- ============ LEFT SIDE PINS (1 top -> 20 bottom) ============ -->
+  <!-- Pin 1: GP0 -->
+  <circle cx="260" cy="50" r="6" fill="#2f6fed" stroke="#0c2f8a" stroke-width="1.5"/>
+  <line x1="254" y1="50" x2="90" y2="50" stroke="#2f6fed" stroke-width="1.5"/>
+  <text x="80" y="54" text-anchor="end" font-size="12" fill="#0c2f8a" font-weight="bold">GP0 (pin 1)</text>
+  <text x="80" y="68" text-anchor="end" font-size="11" fill="#333333">UART TX -&gt; debug adapter RX</text>
+
+  <!-- Pin 2: GP1 -->
+  <circle cx="260" cy="80" r="6" fill="#2f6fed" stroke="#0c2f8a" stroke-width="1.5"/>
+  <line x1="254" y1="80" x2="90" y2="80" stroke="#2f6fed" stroke-width="1.5"/>
+  <text x="80" y="84" text-anchor="end" font-size="12" fill="#0c2f8a" font-weight="bold">GP1 (pin 2)</text>
+  <text x="80" y="98" text-anchor="end" font-size="11" fill="#333333">UART RX -&gt; debug adapter TX</text>
+
+  <!-- Pin 3: GND -->
+  <circle cx="260" cy="110" r="6" fill="#222222" stroke="#000000" stroke-width="1.5"/>
+  <line x1="254" y1="110" x2="90" y2="110" stroke="#222222" stroke-width="1.5"/>
+  <text x="80" y="114" text-anchor="end" font-size="12" fill="#000000" font-weight="bold">GND (pin 3)</text>
+  <text x="80" y="128" text-anchor="end" font-size="11" fill="#333333">-&gt; debug adapter GND</text>
+
+  <!-- Pins 4-19: unused, plain grey dots -->
+  <g fill="#bbbbbb" stroke="#888888" stroke-width="1">
+    <circle cx="260" cy="140" r="4"/><circle cx="260" cy="170" r="4"/><circle cx="260" cy="200" r="4"/>
+    <circle cx="260" cy="230" r="4"/><circle cx="260" cy="260" r="4"/><circle cx="260" cy="290" r="4"/>
+    <circle cx="260" cy="320" r="4"/><circle cx="260" cy="350" r="4"/><circle cx="260" cy="380" r="4"/>
+    <circle cx="260" cy="410" r="4"/><circle cx="260" cy="440" r="4"/><circle cx="260" cy="470" r="4"/>
+    <circle cx="260" cy="500" r="4"/><circle cx="260" cy="530" r="4"/><circle cx="260" cy="560" r="4"/>
+    <circle cx="260" cy="590" r="4"/>
+  </g>
+  <text x="245" y="360" text-anchor="end" font-size="10" fill="#999999" transform="rotate(-90 245 360)">unused pins</text>
+
+  <!-- Pin 20: GP15 (bottom-left) -->
+  <circle cx="260" cy="620" r="6" fill="#e08a1e" stroke="#8a5210" stroke-width="1.5"/>
+  <line x1="254" y1="620" x2="90" y2="620" stroke="#e08a1e" stroke-width="1.5"/>
+  <text x="80" y="616" text-anchor="end" font-size="12" fill="#8a5210" font-weight="bold">GP15 (pin 20)</text>
+  <text x="80" y="630" text-anchor="end" font-size="11" fill="#333333">-&gt; button -&gt; GND (internal pull-up)</text>
+
+  <!-- ============ RIGHT SIDE PINS (40 top -> 21 bottom) ============ -->
+  <!-- Pin 40: VBUS -->
+  <circle cx="460" cy="50" r="6" fill="#d1263a" stroke="#7a0f1c" stroke-width="1.5"/>
+  <line x1="466" y1="50" x2="630" y2="50" stroke="#d1263a" stroke-width="1.5"/>
+  <text x="640" y="54" font-size="12" fill="#7a0f1c" font-weight="bold">VBUS (pin 40)</text>
+  <text x="640" y="68" font-size="11" fill="#333333">&lt;- boost converter VO (+5V)</text>
+
+  <!-- Pin 39: VSYS (explicitly flagged unused) -->
+  <circle cx="460" cy="80" r="5" fill="#dddddd" stroke="#999999" stroke-width="1.5"/>
+  <line x1="466" y1="80" x2="630" y2="80" stroke="#999999" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="640" y="84" font-size="11" fill="#999999">VSYS (pin 39) — unused</text>
+  <text x="640" y="98" font-size="10" fill="#999999">do NOT also wire this, see README</text>
+
+  <!-- Pin 38: GND -->
+  <circle cx="460" cy="110" r="6" fill="#222222" stroke="#000000" stroke-width="1.5"/>
+  <line x1="466" y1="110" x2="630" y2="110" stroke="#222222" stroke-width="1.5"/>
+  <text x="640" y="114" font-size="12" fill="#000000" font-weight="bold">GND (pin 38)</text>
+  <text x="640" y="128" font-size="11" fill="#333333">&lt;- boost converter GND / battery –</text>
+
+  <!-- Pins 37-25: unused -->
+  <g fill="#bbbbbb" stroke="#888888" stroke-width="1">
+    <circle cx="460" cy="140" r="4"/><circle cx="460" cy="170" r="4"/><circle cx="460" cy="200" r="4"/>
+    <circle cx="460" cy="230" r="4"/><circle cx="460" cy="260" r="4"/><circle cx="460" cy="290" r="4"/>
+    <circle cx="460" cy="320" r="4"/><circle cx="460" cy="350" r="4"/><circle cx="460" cy="380" r="4"/>
+    <circle cx="460" cy="410" r="4"/><circle cx="460" cy="440" r="4"/><circle cx="460" cy="470" r="4"/>
+    <circle cx="460" cy="500" r="4"/>
+  </g>
+
+  <!-- Pin 24: GP18 -->
+  <circle cx="460" cy="530" r="6" fill="#1f9e4d" stroke="#0e5c2a" stroke-width="1.5"/>
+  <line x1="466" y1="530" x2="630" y2="530" stroke="#1f9e4d" stroke-width="1.5"/>
+  <text x="640" y="526" font-size="12" fill="#0e5c2a" font-weight="bold">GP18 (pin 24)</text>
+  <text x="640" y="540" font-size="11" fill="#333333">-&gt; 220-330Ω resistor -&gt; LED anode</text>
+
+  <!-- Pin 23: GND -->
+  <circle cx="460" cy="560" r="6" fill="#222222" stroke="#000000" stroke-width="1.5"/>
+  <line x1="466" y1="560" x2="630" y2="560" stroke="#222222" stroke-width="1.5"/>
+  <text x="640" y="564" font-size="12" fill="#000000" font-weight="bold">GND (pin 23)</text>
+  <text x="640" y="578" font-size="11" fill="#333333">-&gt; LED cathode</text>
+
+  <!-- Pins 22, 21: unused -->
+  <g fill="#bbbbbb" stroke="#888888" stroke-width="1">
+    <circle cx="460" cy="590" r="4"/><circle cx="460" cy="620" r="4"/>
+  </g>
+
+  <!-- Legend -->
+  <g transform="translate(40,650)">
+    <circle cx="0" cy="0" r="6" fill="#d1263a" stroke="#7a0f1c" stroke-width="1.5"/>
+    <text x="12" y="4" font-size="11" fill="#333333">Power in</text>
+
+    <circle cx="90" cy="0" r="6" fill="#222222" stroke="#000000" stroke-width="1.5"/>
+    <text x="102" y="4" font-size="11" fill="#333333">Ground</text>
+
+    <circle cx="175" cy="0" r="6" fill="#1f9e4d" stroke="#0e5c2a" stroke-width="1.5"/>
+    <text x="187" y="4" font-size="11" fill="#333333">LED</text>
+
+    <circle cx="235" cy="0" r="6" fill="#e08a1e" stroke="#8a5210" stroke-width="1.5"/>
+    <text x="247" y="4" font-size="11" fill="#333333">Button</text>
+
+    <circle cx="315" cy="0" r="6" fill="#2f6fed" stroke="#0c2f8a" stroke-width="1.5"/>
+    <text x="327" y="4" font-size="11" fill="#333333">Debug UART (optional)</text>
+
+    <circle cx="490" cy="0" r="5" fill="#bbbbbb" stroke="#888888" stroke-width="1"/>
+    <text x="502" y="4" font-size="11" fill="#333333">Unused</text>
+  </g>
+</svg>
