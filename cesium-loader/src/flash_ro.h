@@ -5,13 +5,13 @@
 #include <stdbool.h>
 
 /*
- * These four constants MUST match flash.h in your pico-usb-flash-drive
+ * These three constants MUST match flash.h in your pico-usb-flash-drive
  * fork exactly, or field_mode will read garbage / the wrong flash region.
- * If you change FLASH_FAT_OFFSET or FAT_BLOCK_NUM over there (e.g. to make
- * the volume bigger than 64KB), mirror the change here too.
+ * Currently sized for a 512KB volume (1024 sectors @ 512 bytes). If you
+ * resize the volume again over there, mirror the change here too.
  */
-#define FLASH_FAT_OFFSET   0x1F0000
-#define FAT_BLOCK_NUM      128   // 64KB
+#define FLASH_FAT_OFFSET   0x180000
+#define FAT_BLOCK_NUM      1024  // 512KB
 #define FAT_BLOCK_SIZE     512
 
 // Memory-mapped read only -- no erase, no write. Safe to call any time.

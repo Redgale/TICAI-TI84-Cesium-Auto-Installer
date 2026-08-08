@@ -10,28 +10,30 @@
  * unless we register a class driver ourselves via
  * usbh_app_driver_get_cb().
  *
- * VERSION CAVEAT: this hooks into TinyUSB's internal host class-driver
- * table (usbh_class_driver_t / tuh_class_driver_t depending on version),
- * which is NOT part of TinyUSB's stable public API and has changed field
- * names/order across releases. Check the struct definition in your
- * installed copy of tinyusb's src/host/usbh_pvt.h (or usbh.h, depending on
- * version) and adjust the field names below to match before this will
- * compile. This file gets you the right *shape* of the solution (claim
- * interface -> find two bulk endpoints -> tuh_edpt_open both -> tell
- * dusb_link.c) ported from how TinyUSB's own MSC/vendor examples do it,
- * but the exact struct layout needs a one-time check against your SDK
- * version.
+ * The usbh_class_driver_t type and usbh_app_driver_get_cb() declaration
+ * live in host/usbh_pvt.h -- confirmed against hathach/tinyusb's current
+ * source (github.com/hathach/tinyusb/blob/master/src/host/usbh.h and the
+ * usbh_pvt.h it's paired with). That header is TinyUSB's internal
+ * class-driver interface, not the stable tuh_* public API, so if a future
+ * TinyUSB update changes field names here, this is the one file that would
+ * need adjusting to match.
  */
 
+#include <stdio.h>
 #include <string.h>
 #include "tusb.h"
+#include "host/usbh_pvt.h"
 #include "dusb_link.h"
 
 static bool ti_open(uint8_t rhport, uint8_t daddr, tusb_desc_interface_t const *itf_desc, uint16_t max_len) {
     (void)rhport;
 
+    printf("[usbh_ti] ti_open: daddr=%u itf_class=0x%02x itf_num=%u n_ep=%u\n",
+           daddr, itf_desc->bInterfaceClass, itf_desc->bInterfaceNumber, itf_desc->bNumEndpoints);
+
     // Only claim vendor-specific interfaces (TI's calculators use 0xFF).
     if (itf_desc->bInterfaceClass != TUSB_CLASS_VENDOR_SPECIFIC) {
+        printf("[usbh_ti] not vendor-specific, skipping\n");
         return false;
     }
 
@@ -45,12 +47,14 @@ static bool ti_open(uint8_t rhport, uint8_t daddr, tusb_desc_interface_t const *
         tusb_desc_endpoint_t const *ep = (tusb_desc_endpoint_t const *)p;
         if (ep->bDescriptorType == TUSB_DESC_ENDPOINT &&
             ep->bmAttributes.xfer == TUSB_XFER_BULK) {
+            printf("[usbh_ti] found bulk endpoint 0x%02x\n", ep->bEndpointAddress);
             if (tu_edpt_dir(ep->bEndpointAddress) == TUSB_DIR_IN) {
                 ep_in = ep->bEndpointAddress;
             } else {
                 ep_out = ep->bEndpointAddress;
             }
             if (!tuh_edpt_open(daddr, ep)) {
+                printf("[usbh_ti] tuh_edpt_open FAILED for 0x%02x\n", ep->bEndpointAddress);
                 return false;
             }
         }
@@ -58,25 +62,25 @@ static bool ti_open(uint8_t rhport, uint8_t daddr, tusb_desc_interface_t const *
     }
 
     if (!ep_in || !ep_out) {
+        printf("[usbh_ti] didn't find both bulk endpoints (in=0x%02x out=0x%02x)\n", ep_in, ep_out);
         return false; // didn't find the pair we expected
     }
 
+    printf("[usbh_ti] claimed interface, ep_in=0x%02x ep_out=0x%02x\n", ep_in, ep_out);
     dusb_link_init(daddr, ep_in, ep_out);
     return true;
 }
 
 // --- Registration -----------------------------------------------------------
-// The exact struct name/fields are the version-sensitive part mentioned
-// above. This mirrors the shape TinyUSB's own examples/host vendor class
-// stub uses: init/open/set_config/xfer_cb/close.
 
 static bool ti_init(void) { return true; }
 static bool ti_deinit(void) { return true; }
 static bool ti_set_config(uint8_t daddr, uint8_t itf_num) {
-    (void)daddr; (void)itf_num;
-    tuh_vid_pid_t vid_pid;
-    (void)vid_pid;
-    return true; // no additional SET_CONFIGURATION step needed for DUSB
+    // No additional control transfers needed for DUSB -- but TinyUSB's
+    // enumeration state machine won't proceed to tuh_mount_cb() until every
+    // claimed interface's class driver explicitly reports completion here.
+    usbh_driver_set_config_complete(daddr, itf_num);
+    return true;
 }
 static bool ti_xfer_cb(uint8_t daddr, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes) {
     (void)daddr; (void)ep_addr; (void)result; (void)xferred_bytes;
@@ -86,7 +90,9 @@ static void ti_close(uint8_t daddr) { (void)daddr; }
 
 usbh_class_driver_t const *usbh_app_driver_get_cb(uint8_t *driver_count) {
     static usbh_class_driver_t const driver = {
+#if CFG_TUSB_DEBUG >= 2
         .name       = "TI-DUSB",
+#endif
         .init       = ti_init,
         .deinit     = ti_deinit,
         .open       = ti_open,

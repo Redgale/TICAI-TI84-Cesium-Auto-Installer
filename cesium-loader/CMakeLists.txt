@@ -42,4 +42,10 @@ target_link_libraries(field_mode
     tinyusb_board
 )
 
+# Debug output goes over UART (GP0=TX/GP1=RX at 115200 baud), never USB --
+# the native USB port is dedicated to host mode talking to the calculator,
+# so it can't also carry a USB-CDC debug console at the same time.
+pico_enable_stdio_uart(field_mode 1)
+pico_enable_stdio_usb(field_mode 0)
+
 pico_add_extra_outputs(field_mode)

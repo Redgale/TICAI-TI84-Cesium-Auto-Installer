@@ -43,6 +43,7 @@
 #define DUSB_VPKT_VAR_CNTS  0x000D
 #define DUSB_VPKT_MODE_SET  0x0012 // ack of mode-set/ping, confusingly same name as request
 #define DUSB_VPKT_DATA_ACK  0xAA00
+#define DUSB_VPKT_DELAY_ACK 0xBB00 // "still working, wait N microseconds then ask again"
 #define DUSB_VPKT_EOT       0xDD00
 #define DUSB_VPKT_ERROR     0xEE00
 
@@ -66,10 +67,10 @@ typedef struct {
     volatile bool done;
     volatile bool ok;
     volatile uint32_t actual_len;
-} xfer_result_t;
+} blocking_xfer_t;
 
 static void xfer_cb(tuh_xfer_t *xfer) {
-    xfer_result_t *r = (xfer_result_t *)xfer->user_data;
+    blocking_xfer_t *r = (blocking_xfer_t *)xfer->user_data;
     r->ok = (xfer->result == XFER_RESULT_SUCCESS);
     r->actual_len = xfer->actual_len;
     r->done = true;
@@ -77,7 +78,7 @@ static void xfer_cb(tuh_xfer_t *xfer) {
 
 // Blocks (pumping tuh_task()) until the transfer completes or times out.
 static bool bulk_xfer(uint8_t ep_addr, uint8_t *buf, uint16_t len, uint32_t *actual_len, uint32_t timeout_ms) {
-    xfer_result_t result = {0};
+    blocking_xfer_t result = {0};
 
     tuh_xfer_t xfer = {
         .daddr = s_daddr,
@@ -89,6 +90,7 @@ static bool bulk_xfer(uint8_t ep_addr, uint8_t *buf, uint16_t len, uint32_t *act
     };
 
     if (!tuh_edpt_xfer(&xfer)) {
+        printf("[dusb] bulk_xfer: tuh_edpt_xfer() rejected ep=0x%02x len=%u\n", ep_addr, len);
         return false;
     }
 
@@ -96,11 +98,15 @@ static bool bulk_xfer(uint8_t ep_addr, uint8_t *buf, uint16_t len, uint32_t *act
     while (!result.done) {
         tuh_task();
         if ((time_us_64() - start) > (uint64_t)timeout_ms * 1000) {
+            printf("[dusb] bulk_xfer: TIMEOUT ep=0x%02x len=%u after %ums\n", ep_addr, len, timeout_ms);
             return false;
         }
     }
 
     if (actual_len) *actual_len = result.actual_len;
+    if (!result.ok) {
+        printf("[dusb] bulk_xfer: xfer failed ep=0x%02x len=%u (result.ok=false)\n", ep_addr, len);
+    }
     return result.ok;
 }
 
@@ -123,18 +129,41 @@ static bool raw_send(uint8_t type, const uint8_t *data, uint32_t size) {
     return bulk_xfer(s_ep_out, buf, (uint16_t)(size + 5), &actual, XFER_TIMEOUT_MS);
 }
 
-// Reads exactly one raw packet: 5-byte header, then `size` bytes of data.
+// Reads one raw packet. Doesn't assume the header (5 bytes) and payload
+// arrive as two separate USB transactions -- for small replies the
+// calculator sends both together in one packet, and requesting exactly 5
+// bytes on the first read risks the extra bytes being silently dropped by
+// the host controller rather than buffered for a follow-up read. Instead:
+// request a generous chunk, see how much actually came back, and only
+// issue a second read for whatever payload didn't fit in the first one.
 static bool raw_recv(uint8_t *type, uint32_t *size, uint8_t *data, uint32_t data_cap) {
-    uint8_t hdr[5];
+    uint8_t buf[64]; // typical full-speed bulk max packet size; header+small replies fit in one
     uint32_t actual;
-    if (!bulk_xfer(s_ep_in, hdr, 5, &actual, XFER_TIMEOUT_MS) || actual < 5) return false;
+    if (!bulk_xfer(s_ep_in, buf, sizeof(buf), &actual, XFER_TIMEOUT_MS) || actual < 5) {
+        printf("[dusb] raw_recv: header read failed or short (actual=%u)\n", actual);
+        return false;
+    }
 
-    uint32_t sz = ((uint32_t)hdr[0] << 24) | ((uint32_t)hdr[1] << 16) | ((uint32_t)hdr[2] << 8) | hdr[3];
-    uint8_t ty = hdr[4];
+    uint32_t sz = ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16) | ((uint32_t)buf[2] << 8) | buf[3];
+    uint8_t ty = buf[4];
+    printf("[dusb] raw_recv: header says type=%u size=%u (got %u bytes in first read)\n", ty, sz, actual);
 
-    if (sz > data_cap) return false;
-    if (sz > 0) {
-        if (!bulk_xfer(s_ep_in, data, (uint16_t)sz, &actual, XFER_TIMEOUT_MS) || actual < sz) return false;
+    if (sz > data_cap) {
+        printf("[dusb] raw_recv: declared size %u exceeds buffer cap %u\n", sz, data_cap);
+        return false;
+    }
+
+    uint32_t have = actual - 5; // payload bytes already in `buf` beyond the header
+    if (have > sz) have = sz;   // (shouldn't happen, but don't overrun on a malformed reply)
+    if (have > 0) memcpy(data, buf + 5, have);
+
+    if (have < sz) {
+        uint32_t remaining = sz - have;
+        uint32_t got2;
+        if (!bulk_xfer(s_ep_in, data + have, (uint16_t)remaining, &got2, XFER_TIMEOUT_MS) || got2 < remaining) {
+            printf("[dusb] raw_recv: follow-up payload read failed (wanted %u more)\n", remaining);
+            return false;
+        }
     }
 
     *type = ty;
@@ -242,6 +271,32 @@ static bool vpkt_recv(uint16_t *type, uint8_t *out, uint32_t out_cap, uint32_t *
     return true;
 }
 
+// Same as vpkt_recv(), but transparently handles DUSB_VPKT_DELAY_ACK: the
+// calculator sends this when it needs more time (e.g. checking available
+// memory) before giving the real reply. Ported from tilibs' CATCH_DELAY
+// macro in dusb_cmd.cc: parse the 4-byte big-endian delay (microseconds),
+// sleep it off (clamped to 400ms, same as tilibs), then read again.
+static bool vpkt_recv_wait(uint16_t *type, uint8_t *out, uint32_t out_cap, uint32_t *out_size) {
+    for (int attempt = 0; attempt < 5; attempt++) {
+        if (!vpkt_recv(type, out, out_cap, out_size)) return false;
+
+        if (*type != DUSB_VPKT_DELAY_ACK) {
+            return true; // real reply, not a delay -- done
+        }
+
+        uint32_t delay_us = 0;
+        if (*out_size >= 4) {
+            delay_us = ((uint32_t)out[0] << 24) | ((uint32_t)out[1] << 16) | ((uint32_t)out[2] << 8) | out[3];
+        }
+        if (delay_us > 400000) delay_us = 400000; // same clamp tilibs uses
+        printf("[dusb] vpkt_recv_wait: got DELAY_ACK, waiting %u us then retrying\n", delay_us);
+        sleep_ms(delay_us / 1000);
+        // loop and read again for the real reply
+    }
+    printf("[dusb] vpkt_recv_wait: too many consecutive DELAY_ACKs, giving up\n");
+    return false;
+}
+
 // ---- Public API -------------------------------------------------------------
 
 bool dusb_link_init(uint8_t daddr, uint8_t ep_in, uint8_t ep_out) {
@@ -253,20 +308,33 @@ bool dusb_link_init(uint8_t daddr, uint8_t ep_in, uint8_t ep_out) {
 }
 
 bool dusb_link_connect(void) {
+    printf("[dusb] connect: sending buf size request\n");
     // 1. buffer size negotiation
     uint8_t req[4] = {
         (uint8_t)(DUSB_DFL_BUF_SIZE >> 24), (uint8_t)(DUSB_DFL_BUF_SIZE >> 16),
         (uint8_t)(DUSB_DFL_BUF_SIZE >> 8),  (uint8_t)(DUSB_DFL_BUF_SIZE)
     };
-    if (!raw_send(DUSB_RPKT_BUF_SIZE_REQ, req, 4)) return false;
+    if (!raw_send(DUSB_RPKT_BUF_SIZE_REQ, req, 4)) {
+        printf("[dusb] connect: FAILED sending buf size request\n");
+        return false;
+    }
 
     uint8_t type; uint32_t size; uint8_t data[8];
-    if (!raw_recv(&type, &size, data, sizeof(data))) return false;
-    if (type != DUSB_RPKT_BUF_SIZE_ALLOC || size != 4) return false;
+    if (!raw_recv(&type, &size, data, sizeof(data))) {
+        printf("[dusb] connect: FAILED receiving buf size alloc reply\n");
+        return false;
+    }
+    printf("[dusb] connect: got raw packet type=%u size=%u\n", type, size);
+    if (type != DUSB_RPKT_BUF_SIZE_ALLOC || size != 4) {
+        printf("[dusb] connect: FAILED unexpected type/size (wanted type=%u size=4)\n", DUSB_RPKT_BUF_SIZE_ALLOC);
+        return false;
+    }
 
     uint32_t alloc = ((uint32_t)data[0] << 24) | ((uint32_t)data[1] << 16) | ((uint32_t)data[2] << 8) | data[3];
+    printf("[dusb] connect: calculator offered buf size %u\n", alloc);
     if (alloc > DUSB_CE_MAX_BUF) alloc = DUSB_CE_MAX_BUF; // 83PCE/84+CE over-advertise; clamp as tilibs does
     s_rpkt_maxlen = alloc;
+    printf("[dusb] connect: using rpkt_maxlen=%u\n", s_rpkt_maxlen);
 
     // 2. ping / mode set: mode = { 3, 1, 0, 0, 0x07d0 } (DUSB_MODE_NORMAL)
     uint8_t mode[10] = {
@@ -276,18 +344,34 @@ bool dusb_link_connect(void) {
         0x00, 0x00,  // arg4 = 0
         0x07, 0xd0,  // arg5 = 0x07d0
     };
-    if (!vpkt_send(DUSB_VPKT_PING, mode, sizeof(mode))) return false;
+    printf("[dusb] connect: sending ping/mode-set\n");
+    if (!vpkt_send(DUSB_VPKT_PING, mode, sizeof(mode))) {
+        printf("[dusb] connect: FAILED sending ping/mode-set\n");
+        return false;
+    }
 
     // 3. wait for the calculator's mode-set acknowledgement
     uint16_t rtype; uint32_t rsize;
     uint8_t rbuf[16];
-    if (!vpkt_recv(&rtype, rbuf, sizeof(rbuf), &rsize)) return false;
-    if (rtype == DUSB_VPKT_ERROR) return false;
-    return rtype == DUSB_VPKT_MODE_SET;
+    if (!vpkt_recv_wait(&rtype, rbuf, sizeof(rbuf), &rsize)) {
+        printf("[dusb] connect: FAILED receiving mode-set ack\n");
+        return false;
+    }
+    printf("[dusb] connect: got vpkt type=0x%04x size=%u\n", rtype, rsize);
+    if (rtype == DUSB_VPKT_ERROR) {
+        printf("[dusb] connect: calculator returned ERROR vpkt\n");
+        return false;
+    }
+    bool ok = (rtype == DUSB_VPKT_MODE_SET);
+    printf("[dusb] connect: %s (wanted type=0x%04x)\n", ok ? "SUCCESS" : "FAILED wrong vpkt type", DUSB_VPKT_MODE_SET);
+    return ok;
 }
 
 bool dusb_link_send_variable(const char *name, uint8_t var_type, bool archived,
                               uint8_t version, const uint8_t *data, uint32_t size) {
+    printf("[dusb] send_variable: name='%s' type=0x%02x archived=%d version=%u size=%u\n",
+           name, var_type, archived, version, size);
+
     // Build the 3 attributes exactly as calc_84p.cc::send_var does for the
     // 84+ family, using the CE's header byte (0x0F).
     uint8_t attr_type[4]    = { 0xF0, CE_VAR_TYPE_HEADER_BYTE, 0x00, var_type };
@@ -328,18 +412,40 @@ bool dusb_link_send_variable(const char *name, uint8_t var_type, bool archived,
     rts[j++] = 0x00; rts[j++] = 0x04;
     memcpy(rts + j, attr_version, 4); j += 4;
 
-    if (!vpkt_send(DUSB_VPKT_RTS, rts, j)) return false;
+    printf("[dusb] send_variable: sending RTS (%u bytes)\n", j);
+    if (!vpkt_send(DUSB_VPKT_RTS, rts, j)) {
+        printf("[dusb] send_variable: FAILED sending RTS\n");
+        return false;
+    }
 
     // Wait for DATA_ACK before sending content
     uint16_t rtype; uint32_t rsize; uint8_t rbuf[16];
-    if (!vpkt_recv(&rtype, rbuf, sizeof(rbuf), &rsize)) return false;
-    if (rtype != DUSB_VPKT_DATA_ACK) return false;
+    if (!vpkt_recv_wait(&rtype, rbuf, sizeof(rbuf), &rsize)) {
+        printf("[dusb] send_variable: FAILED receiving ACK after RTS\n");
+        return false;
+    }
+    printf("[dusb] send_variable: got vpkt type=0x%04x after RTS\n", rtype);
+    if (rtype != DUSB_VPKT_DATA_ACK) {
+        printf("[dusb] send_variable: FAILED wrong type after RTS (wanted 0x%04x)\n", DUSB_VPKT_DATA_ACK);
+        return false;
+    }
 
     // Send the variable's raw contents (fragmented internally if large)
-    if (!vpkt_send(DUSB_VPKT_VAR_CNTS, data, size)) return false;
+    printf("[dusb] send_variable: sending content (%u bytes)\n", size);
+    if (!vpkt_send(DUSB_VPKT_VAR_CNTS, data, size)) {
+        printf("[dusb] send_variable: FAILED sending content\n");
+        return false;
+    }
 
-    if (!vpkt_recv(&rtype, rbuf, sizeof(rbuf), &rsize)) return false;
-    if (rtype != DUSB_VPKT_DATA_ACK) return false;
+    if (!vpkt_recv_wait(&rtype, rbuf, sizeof(rbuf), &rsize)) {
+        printf("[dusb] send_variable: FAILED receiving ACK after content\n");
+        return false;
+    }
+    printf("[dusb] send_variable: got vpkt type=0x%04x after content\n", rtype);
+    if (rtype != DUSB_VPKT_DATA_ACK) {
+        printf("[dusb] send_variable: FAILED wrong type after content (wanted 0x%04x)\n", DUSB_VPKT_DATA_ACK);
+        return false;
+    }
 
     // End of transmission for this variable (calc_84p.cc doesn't wait for
     // an ack here either -- it just pauses briefly before the next variable)

@@ -1,1 +1,1 @@
-export PICO_SDK_PATH=~/ticai/pico-usb-flash-drive/lib/pico-sdk
+export PICO_SDK_PATH=~/Projects/ticai/pico-usb-flash-drive/lib/pico-sdk
