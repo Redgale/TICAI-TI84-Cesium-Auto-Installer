@@ -7,7 +7,9 @@ include(${PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
 project(picofs_project C CXX ASM)
 
-set(PICO_BOARD pico_w)
+if(NOT PICO_BOARD)
+  set(PICO_BOARD pico_w)
+endif()
 set(FAMILY rp2040)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)

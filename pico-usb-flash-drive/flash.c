@@ -1,7 +1,14 @@
 #include "flash.h"
 
 
-uint8_t disk_image[5][FAT_BLOCK_SIZE] =
+/*
+ * Boot sector + three FAT sectors + four root-directory sectors. Keeping the
+ * complete metadata region in this image lets initialization replace it with
+ * one aligned 4 KiB erase/program operation.
+ */
+/* Must remain in RAM: flash_range_program() cannot read its source through XIP
+ * while onboard flash is being erased/programmed. */
+static uint8_t disk_image[FAT_METADATA_SECTOR_COUNT][FAT_BLOCK_SIZE] =
 {
     {
         0xEB, 0x3C, 0x90,
@@ -10,10 +17,10 @@ uint8_t disk_image[5][FAT_BLOCK_SIZE] =
         0x01,        // BPB_SecPerClus
         0x01, 0x00,  // BPB_RsvdSecCnt
         0x01,        // BPB_NumFATs
-        0x10, 0x00,  // BPB_RootEntCnt
+        FAT_ROOT_ENTRY_COUNT & 0xFF, FAT_ROOT_ENTRY_COUNT >> 8,  // BPB_RootEntCnt
         FAT_BLOCK_NUM & 0xFF, FAT_BLOCK_NUM >> 8,  // BPB_TotSec16
         0xF8,        // BPB_Media
-        0x03, 0x00,  // BPB_FATSz16 -- 3 sectors, up from 1, to address 1024 total sectors
+        FAT_TABLE_SECTOR_COUNT & 0xFF, FAT_TABLE_SECTOR_COUNT >> 8, // BPB_FATSz16
         0x01, 0x00,  // BPB_SecPerTrk
         0x01, 0x00,  // BPB_NumHeads
         0x00, 0x00, 0x00, 0x00, // BPB_HiddSec
@@ -66,9 +73,9 @@ uint8_t disk_image[5][FAT_BLOCK_SIZE] =
     {0},
     {0},
 
-    //------------- Block4: Root Directory -------------//
-    // Volume label only -- no seed file this time (kept simple/low-risk).
-    // Create your CESIUM and GAMES folders yourself once it's mounted.
+    //------------- Blocks 4-7: Root Directory -------------//
+    // Volume label only. The remaining three sectors are zero-filled by the
+    // compiler, providing 64 root entries instead of the previous 16.
     {
         'P' , 'I' , 'C' , 'O' , '_' , 'F' , 'S' , ' ' , ' ' , ' ' , ' ' , 0x08,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4F, 0x6D,
@@ -81,31 +88,34 @@ void flash_fat_initialize(void) {
     uint32_t ints = save_and_disable_interrupts();
 
     #if defined(ERASE_ALL_FLASH)
-    flash_range_erase(FLASH_FAT_OFFSET, FLASH_SECTOR_SIZE * 16);
+    flash_range_erase(FLASH_FAT_OFFSET, FAT_VOLUME_SIZE_BYTES);
     #else
-    flash_range_erase(FLASH_FAT_OFFSET, FLASH_SECTOR_SIZE);
-    flash_range_program(FLASH_FAT_OFFSET, (uint8_t *)disk_image, sizeof(disk_image));
+    flash_range_erase(FLASH_FAT_OFFSET, sizeof(disk_image));
     #endif
+    flash_range_program(FLASH_FAT_OFFSET, (const uint8_t *)disk_image, sizeof(disk_image));
     restore_interrupts(ints);
 }
 
-bool flash_fat_read(int block, uint8_t *buffer) {
+bool flash_fat_read(uint32_t block, uint8_t *buffer) {
+    if (buffer == NULL || block >= FAT_BLOCK_NUM) return false;
     const uint8_t *data = (uint8_t *)(XIP_BASE + FLASH_FAT_OFFSET + FAT_BLOCK_SIZE * block);
     memcpy(buffer, data, FAT_BLOCK_SIZE);
     return true;
 }
 
-bool flash_fat_write(int block, uint8_t *buffer) {
+bool flash_fat_write(uint32_t block, const uint8_t *buffer) {
     /*
      * NOTE: Flash memory must be erased and updated in blocks of 4096 bytes
      *       from the head, and updating at the halfway boundary will (probably)
      *       lead to undefined results.
      */
-    uint8_t data[FLASH_SECTOR_SIZE];  // 4096 byte
+    if (buffer == NULL || block >= FAT_BLOCK_NUM) return false;
+
+    uint8_t data[FLASH_SECTOR_SIZE];  // 4096 bytes
 
     // Obtain the location of the FAT sector(512 byte) in the flash memory sector(4096 byte).
-    int flash_sector = floor((block * FAT_BLOCK_SIZE) / FLASH_SECTOR_SIZE);
-    int flash_sector_fat_offset = (block * FAT_BLOCK_SIZE) % FLASH_SECTOR_SIZE;
+    uint32_t flash_sector = (block * FAT_BLOCK_SIZE) / FLASH_SECTOR_SIZE;
+    uint32_t flash_sector_fat_offset = (block * FAT_BLOCK_SIZE) % FLASH_SECTOR_SIZE;
     // Retrieve the data in the flash memory sector and update only the data for the FAT sector.
     memcpy(data, (uint8_t *)(XIP_BASE + FLASH_FAT_OFFSET + FLASH_SECTOR_SIZE * flash_sector), sizeof(data));
     memcpy(data + flash_sector_fat_offset, buffer, FAT_BLOCK_SIZE);

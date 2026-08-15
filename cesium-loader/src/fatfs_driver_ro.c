@@ -23,12 +23,12 @@
 static DSTATUS disk_stat = STA_NOINIT;
 
 DSTATUS disk_status(BYTE drv) {
-    (void)drv;
+    if (drv != 0) return STA_NOINIT;
     return disk_stat;
 }
 
 DSTATUS disk_initialize(BYTE drv) {
-    (void)drv;
+    if (drv != 0) return STA_NOINIT;
     uint8_t block[FAT_BLOCK_SIZE];
     flash_fat_read_ro(0, block);
 
@@ -44,7 +44,10 @@ DSTATUS disk_initialize(BYTE drv) {
 }
 
 DRESULT disk_read(BYTE drv, BYTE *buff, LBA_t sector, UINT count) {
-    (void)drv;
+    if (drv != 0 || buff == NULL || count == 0 || sector >= FAT_BLOCK_NUM ||
+        count > FAT_BLOCK_NUM - sector) {
+        return RES_PARERR;
+    }
     for (UINT i = 0; i < count; i++) {
         if (!flash_fat_read_ro((int)(sector + i), buff + (i * FAT_BLOCK_SIZE))) {
             return RES_ERROR;
@@ -54,25 +57,30 @@ DRESULT disk_read(BYTE drv, BYTE *buff, LBA_t sector, UINT count) {
 }
 
 DRESULT disk_write(BYTE drv, const BYTE *buff, LBA_t sector, UINT count) {
-    (void)drv; (void)buff; (void)sector; (void)count;
+    if (drv != 0) return RES_PARERR;
+    (void)buff; (void)sector; (void)count;
     return RES_WRPRT; // write-protected: field_mode never writes here
 }
 
 DRESULT disk_ioctl(BYTE drv, BYTE ctrl, void *buff) {
-    (void)drv;
+    if (drv != 0) return RES_PARERR;
     switch (ctrl) {
         case CTRL_SYNC: return RES_OK;
         case GET_SECTOR_COUNT:
+            if (buff == NULL) return RES_PARERR;
             *(LBA_t *)buff = FAT_BLOCK_NUM;
             return RES_OK;
         case GET_SECTOR_SIZE:
+            if (buff == NULL) return RES_PARERR;
             *(WORD *)buff = FAT_BLOCK_SIZE;
             return RES_OK;
         case GET_BLOCK_SIZE:
-            *(DWORD *)buff = 1;
+            if (buff == NULL) return RES_PARERR;
+            *(DWORD *)buff = FAT_ERASE_BLOCK_SECTORS;
             return RES_OK;
+        case CTRL_TRIM: return RES_OK;
         default:
-            return RES_OK;
+            return RES_PARERR;
     }
 }
 

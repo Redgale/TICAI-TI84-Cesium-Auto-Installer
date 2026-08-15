@@ -4,23 +4,8 @@
 #include "flash.h"
 
 
-#define  DISK_BLOCK_NUM  128
-#define  DISK_BLOCK_SIZE 512
-
-
 // whether host does safe-eject
 static bool ejected = false;
-
-static void print_block(uint8_t *buffer, size_t l) {
-    for (size_t i = 0; i < l; ++i) {
-        printf("%02x", buffer[i]);
-        if (i % 16 == 15)
-            printf("\n");
-        else
-            printf(", ");
-    }
-}
-
 
 // Invoked when received SCSI_CMD_INQUIRY
 // Application fill vendor id, product id and revision with string up to 8, 16, 4 characters respectively
@@ -56,8 +41,8 @@ bool tud_msc_test_unit_ready_cb(uint8_t lun)
 void tud_msc_capacity_cb(uint8_t lun, uint32_t* block_count, uint16_t* block_size)
 {
     (void) lun;
-    *block_count = DISK_BLOCK_NUM;
-    *block_size  = DISK_BLOCK_SIZE;
+    *block_count = FAT_BLOCK_NUM;
+    *block_size  = FAT_BLOCK_SIZE;
 }
 
 // Invoked when received Start Stop Unit command
@@ -85,11 +70,19 @@ int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset, void* buff
 {
     (void) lun;
     // out of ramdisk
-    if (lba >= DISK_BLOCK_NUM) {
+    if (lba >= FAT_BLOCK_NUM || offset > FAT_BLOCK_SIZE ||
+        bufsize > FAT_BLOCK_SIZE - offset) {
         printf("read10 out of ramdisk: lba=%u\n", lba);
         return -1;
     }
-    flash_fat_read(lba, buffer);
+
+    if (offset == 0 && bufsize == FAT_BLOCK_SIZE) {
+        if (!flash_fat_read(lba, buffer)) return -1;
+    } else {
+        uint8_t block[FAT_BLOCK_SIZE];
+        if (!flash_fat_read(lba, block)) return -1;
+        memcpy(buffer, block + offset, bufsize);
+    }
 
     return (int32_t) bufsize;
 }
@@ -106,12 +99,20 @@ int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t* 
 {
     (void) lun;
     // out of ramdisk
-    if (lba >= DISK_BLOCK_NUM) {
+    if (lba >= FAT_BLOCK_NUM || offset > FAT_BLOCK_SIZE ||
+        bufsize > FAT_BLOCK_SIZE - offset) {
         printf("write10 out of ramdisk: lba=%u\n", lba);
         return -1;
     }
 
-    flash_fat_write(lba, buffer);
+    if (offset == 0 && bufsize == FAT_BLOCK_SIZE) {
+        if (!flash_fat_write(lba, buffer)) return -1;
+    } else {
+        uint8_t block[FAT_BLOCK_SIZE];
+        if (!flash_fat_read(lba, block)) return -1;
+        memcpy(block + offset, buffer, bufsize);
+        if (!flash_fat_write(lba, block)) return -1;
+    }
     return (int32_t)bufsize;
 }
 

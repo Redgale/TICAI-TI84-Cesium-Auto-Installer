@@ -133,26 +133,6 @@ static void led_task(void) {
 // ---- File enumeration (flash-backed FatFs, read-only here) ---------------
 // Relies on loader_mode.uf2 having already written files into these folders.
 
-#define MAX_FILES 32
-
-static int list_dir(const char *path, char out[][64], int max) {
-    DIR dir;
-    FILINFO fno;
-    int count = 0;
-    if (f_opendir(&dir, path) != FR_OK) {
-        return 0;
-    }
-    while (count < max) {
-        if (f_readdir(&dir, &fno) != FR_OK || fno.fname[0] == 0) break;
-        if (fno.fattrib & AM_DIR) continue;
-        strncpy(out[count], fno.fname, 63);
-        out[count][63] = 0;
-        count++;
-    }
-    f_closedir(&dir);
-    return count;
-}
-
 // ---------------------------------------------------------------------------
 // DUSB link protocol -- ported from tilibs, see dusb_link.c for the sources.
 // dusb_link_init() is called from usbh_ti_vendor.c's ti_open() the moment
@@ -166,8 +146,12 @@ static int list_dir(const char *path, char out[][64], int max) {
 static uint8_t file_buf[MAX_FILE_SIZE];
 
 static bool send_one_file(const char *dir, const char *filename) {
-    char path[80];
-    snprintf(path, sizeof(path), "%s/%s", dir, filename);
+    char path[272];
+    int path_len = snprintf(path, sizeof(path), "%s/%s", dir, filename);
+    if (path_len < 0 || (size_t)path_len >= sizeof(path)) {
+        printf("[xfer] path too long: %s/%s\n", dir, filename);
+        return false;
+    }
 
     FIL f;
     if (f_open(&f, path, FA_READ) != FR_OK) {
@@ -175,11 +159,20 @@ static bool send_one_file(const char *dir, const char *filename) {
         return false;
     }
 
+    FSIZE_t file_size = f_size(&f);
+    if (file_size > sizeof(file_buf)) {
+        printf("[xfer] file too large: %s (%lu bytes, maximum %u)\n",
+               path, (unsigned long)file_size, (unsigned)sizeof(file_buf));
+        f_close(&f);
+        return false;
+    }
+
     UINT br = 0;
-    FRESULT fr = f_read(&f, file_buf, sizeof(file_buf), &br);
+    FRESULT fr = f_read(&f, file_buf, (UINT)file_size, &br);
     f_close(&f);
-    if (fr != FR_OK) {
-        printf("[xfer] f_read FAILED: %s (fr=%d)\n", path, fr);
+    if (fr != FR_OK || br != (UINT)file_size) {
+        printf("[xfer] f_read FAILED: %s (fr=%d, wanted=%lu, got=%u)\n",
+               path, fr, (unsigned long)file_size, br);
         return false;
     }
     printf("[xfer] read %s: %u bytes\n", path, br);
@@ -203,20 +196,39 @@ static bool send_one_file(const char *dir, const char *filename) {
 // separate makes each payload independently retestable/reflashable without
 // re-sending the other.
 static bool transfer_folder(const char *dir) {
-    char files[MAX_FILES][64];
-    int count = list_dir(dir, files, MAX_FILES);
-    printf("[xfer] found %d file(s) in %s/\n", count, dir);
+    DIR directory;
+    FRESULT fr = f_opendir(&directory, dir);
+    if (fr != FR_OK) {
+        printf("[xfer] f_opendir FAILED: %s/ (fr=%d)\n", dir, fr);
+        return false;
+    }
 
     if (!dusb_link_connect()) {
         printf("[xfer] dusb_link_connect FAILED\n");
+        f_closedir(&directory);
         return false;
     }
     printf("[xfer] connect OK\n");
 
     bool all_ok = true;
-    for (int i = 0; i < count; i++) {
-        all_ok &= send_one_file(dir, files[i]);
+    unsigned count = 0;
+    while (true) {
+        FILINFO fno;
+        fr = f_readdir(&directory, &fno);
+        if (fr != FR_OK) {
+            printf("[xfer] f_readdir FAILED: %s/ (fr=%d)\n", dir, fr);
+            all_ok = false;
+            break;
+        }
+        if (fno.fname[0] == 0) break;
+        if (fno.fattrib & AM_DIR) continue;
+
+        count++;
+        if (!send_one_file(dir, fno.fname)) all_ok = false;
     }
+
+    f_closedir(&directory);
+    printf("[xfer] processed %u file(s) in %s/\n", count, dir);
     return all_ok;
 }
 

@@ -16,6 +16,12 @@ Two separate firmware images run on the same Raspberry Pi Pico. They are flashed
 
 Connect the Pico to a computer through USB-C. The Pico appears as a normal USB flash drive.
 
+The drive is a **512 KiB FAT12 volume** backed by the last 512 KiB of the
+Pico's 2 MiB onboard flash. USB mass storage, the FAT boot sector, loader-mode
+FatFs, and field-mode FatFs all use the same geometry: 1,024 sectors of 512
+bytes. The root directory has 64 entries; files stored inside `GAMES/` and
+`CESIUM/` are not subject to that fixed root-entry count.
+
 Files can be dragged into two folders:
 
 ```text
@@ -133,19 +139,36 @@ Set `PICO_SDK_PATH` to the location of your Pico SDK:
 export PICO_SDK_PATH=/path/to/pico-sdk
 ```
 
-Then build `field_mode`:
+Prebuilt UF2 files are intentionally not included with source-only snapshots
+after storage changes. Rebuild both modes so the binaries match the filesystem
+geometry in the source.
+
+Build `field_mode` from `cesium-loader/`:
 
 ```bash
-mkdir -p build
-cd build
-cmake .. -DPICO_BOARD=pico
-make -j$(nproc)
+cmake -S cesium-loader -B cesium-loader/build -DPICO_BOARD=pico
+cmake --build cesium-loader/build -j$(nproc)
 ```
 
 The resulting firmware will be located at:
 
 ```text
-build/field_mode.uf2
+cesium-loader/build/field_mode.uf2
+```
+
+Build `loader_mode` from `pico-usb-flash-drive/`. If this repository was
+cloned with Git, initialize the SDK submodule first:
+
+```bash
+git submodule update --init --recursive
+cmake -S pico-usb-flash-drive -B pico-usb-flash-drive/build -DPICO_BOARD=pico
+cmake --build pico-usb-flash-drive/build -j$(nproc)
+```
+
+The loader firmware will be located at:
+
+```text
+pico-usb-flash-drive/build/picofs.uf2
 ```
 
 ### Flashing `field_mode`
@@ -154,7 +177,7 @@ build/field_mode.uf2
 2. Hold the **BOOTSEL** button.
 3. Connect the Pico to your computer.
 4. Release **BOOTSEL**.
-5. Copy `build/field_mode.uf2` to the mounted `RPI-RP2` drive.
+5. Copy `cesium-loader/build/field_mode.uf2` to the mounted `RPI-RP2` drive.
 
 The Pico will reboot automatically after the firmware is copied.
 
@@ -185,6 +208,23 @@ Pico — loader_mode
 ```
 
 After the files have been copied, flash `field_mode` to the Pico and use it as the standalone loader.
+
+#### Upgrading from the earlier 64 KiB loader build
+
+Earlier builds accidentally advertised only 128 sectors (64 KiB) over USB even
+though their FAT boot sector described a 1,024-sector volume. After rebuilding
+and flashing the corrected `loader_mode`, reinitialize the filesystem once so
+the expanded 64-entry root-directory layout is installed:
+
+1. Back up any payload files that are still readable.
+2. Safely eject/unmount the Pico drive.
+3. Hold BOOTSEL for about 10 seconds while `loader_mode` is running to invoke
+   its filesystem initialization, then reconnect it.
+4. Re-create `GAMES/` and `CESIUM/` and copy the payloads back.
+
+Reinitialization erases the filesystem metadata and makes the previous files
+inaccessible. A full-flash erase followed by reflashing the rebuilt loader is
+an alternative when the old volume is already corrupt.
 
 ---
 
